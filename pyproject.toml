@@ -16,7 +16,14 @@ dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
     "pillow>=12.2.0",
+    # The C++ Baba Is You engine (utilForever/baba-is-auto) vendored under
+    # vendor/baba-is-auto. Built via CMake; see scripts/build_pybaba.sh and
+    # the README for toolchain setup notes.
+    "pybaba",
 ]
+
+[tool.uv.sources]
+pybaba = { path = "vendor/baba-is-auto", editable = false }
 
 [project.optional-dependencies]
 train = [

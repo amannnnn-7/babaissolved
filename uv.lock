@@ -168,6 +168,7 @@ dependencies = [
     { name = "httpx" },
     { name = "numpy" },
     { name = "pillow" },
+    { name = "pybaba" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -209,6 +210,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "peft", marker = "extra == 'train'", specifier = ">=0.13" },
     { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pybaba", directory = "vendor/baba-is-auto" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
@@ -1533,6 +1535,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/36/7a/82c363caa145fff88fb475da50d3bf52bb024f61917be5424c3392eaf878/pyarrow-24.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:25ea65d868eb04015cd18e6df2fbe98f07e5bda2abefabcb88fce39a947716f6", size = 51929490, upload-time = "2026-04-21T10:47:55.981Z" },
     { url = "https://files.pythonhosted.org/packages/66/1c/e3e72c8014ad2743ca64a701652c733cc5cbcee15c0463a32a8c55518d9e/pyarrow-24.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:295f0a7f2e242dabd513737cf076007dc5b2d59237e3eca37b05c0c6446f3826", size = 27355660, upload-time = "2026-04-21T10:48:01.718Z" },
 ]
+
+[[package]]
+name = "pybaba"
+version = "0.1"
+source = { directory = "vendor/baba-is-auto" }
 
 [[package]]
 name = "pycparser"

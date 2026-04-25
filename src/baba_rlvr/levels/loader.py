@@ -1,11 +1,15 @@
 """Level loader.
 
-Levels can come from three sources:
-    1. Built-in YAML files under levels/templates/*.yaml (loaded at import).
-    2. Programmatic registration via register_level(level_id, spec_dict).
-    3. PCG-generated archives loaded via levels/_generated/<id>.yaml.
+Levels are stored as **baba-is-auto .txt maps** (the format consumed by
+`pyBaba.Game(path)`). They live in:
 
-A "spec" is the dict consumed by engine.parse_level().
+  * ``levels/templates/*.txt``        — handcrafted RLVR puzzles
+  * ``vendor/baba-is-auto/Resources/Maps/*.txt`` — upstream demo levels
+  * programmatically registered specs (e.g. PCG output via
+    :func:`register_level`).
+
+A *spec* in the registry is a dict ``{"map_path": "...", "max_steps": int}``
+consumed by :func:`baba_rlvr.engine.parse_level`.
 """
 
 from __future__ import annotations
@@ -13,33 +17,43 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
-import yaml
-
 from ..engine import World, parse_level
 
 LEVEL_REGISTRY: dict[str, dict] = {}
 
-# templates/ ships next to this file *and* under repo-root/levels/templates/.
-# We support both for convenience (installed package vs editable dev).
 _HERE = Path(__file__).parent
-# loader.py lives at src/baba_rlvr/levels/loader.py — three parents up is the repo root.
-_REPO_ROOT_LEVELS = _HERE.parent.parent.parent / "levels" / "templates"
-_PKG_LEVELS = _HERE / "templates"
+# loader.py lives at src/baba_rlvr/levels/loader.py — three parents up = repo root.
+_REPO_ROOT = _HERE.parent.parent.parent
+_TEMPLATES = _REPO_ROOT / "levels" / "templates"
+_VENDOR_MAPS = _REPO_ROOT / "vendor" / "baba-is-auto" / "Resources" / "Maps"
+
+_DEFAULT_MAX_STEPS: dict[str, int] = {
+    "tutorial_01": 30,
+    "use_mention_01": 30,
+    "schema_drift_01": 40,
+    "self_redefine_01": 50,
+}
 
 
-def _load_yaml_dir(path: Path) -> None:
+def _scan_dir(path: Path, *, prefix: str = "") -> None:
     if not path.exists():
         return
-    for f in sorted(path.glob("*.yaml")):
-        spec = yaml.safe_load(f.read_text())
-        if not isinstance(spec, dict) or "rows" not in spec:
+    for f in sorted(path.glob("*.txt")):
+        # Skip files that don't parse as ``W H ...``: they're not maps.
+        try:
+            head = f.read_text(encoding="utf-8", errors="ignore").split(None, 2)
+            int(head[0]); int(head[1])
+        except (ValueError, IndexError):
             continue
-        level_id = spec.get("id") or f.stem
-        LEVEL_REGISTRY[level_id] = spec
+        level_id = f"{prefix}{f.stem}"
+        LEVEL_REGISTRY[level_id] = {
+            "map_path": str(f.resolve()),
+            "max_steps": _DEFAULT_MAX_STEPS.get(f.stem, 80),
+        }
 
 
-_load_yaml_dir(_PKG_LEVELS)
-_load_yaml_dir(_REPO_ROOT_LEVELS)
+_scan_dir(_TEMPLATES)
+_scan_dir(_VENDOR_MAPS, prefix="vendor_")
 
 
 def register_level(level_id: str, spec: dict) -> None:

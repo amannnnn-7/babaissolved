@@ -1,0 +1,33 @@
+diff --git a/Extensions/BabaPython/Sources/Rules/Rule.cpp b/Extensions/BabaPython/Sources/Rules/Rule.cpp
+index c4934db..f8f7b49 100644
+--- a/Extensions/BabaPython/Sources/Rules/Rule.cpp
++++ b/Extensions/BabaPython/Sources/Rules/Rule.cpp
+@@ -8,6 +8,7 @@
+ #include <baba-is-auto/Rules/Rule.hpp>
+ 
+ #include <pybind11/pybind11.h>
++#include <pybind11/stl.h>
+ 
+ using namespace baba_is_auto;
+ 
+@@ -15,6 +16,7 @@ void AddRule(pybind11::module& m)
+ {
+     pybind11::class_<Rule>(m, "Rule")
+         .def(pybind11::init<Object, Object, Object>())
++        .def_readwrite("objects", &Rule::objects)
+         .def("__eq__",
+              [](const Rule& left, const Rule& right) { return left == right; });
+ }
+\ No newline at end of file
+diff --git a/Extensions/BabaPython/Sources/Rules/RuleManager.cpp b/Extensions/BabaPython/Sources/Rules/RuleManager.cpp
+index 15b31d8..e390b79 100644
+--- a/Extensions/BabaPython/Sources/Rules/RuleManager.cpp
++++ b/Extensions/BabaPython/Sources/Rules/RuleManager.cpp
+@@ -8,6 +8,7 @@
+ #include <baba-is-auto/Rules/RuleManager.hpp>
+ 
+ #include <pybind11/pybind11.h>
++#include <pybind11/stl.h>
+ 
+ using namespace baba_is_auto;
+ 

@@ -47,3 +47,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Vendored C++ engine — reproduced via scripts/setup_vendor.sh
+vendor/

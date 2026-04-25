@@ -1,0 +1,61 @@
+[project]
+name = "baba-rlvr"
+version = "0.1.0"
+description = "Baba Is You — RLVR environment for the Meta x OpenEnv Hackathon"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [{ name = "Aman Paliwal" }]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.8",
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "rich>=13.7",
+    "typer>=0.12",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+train = [
+    "torch>=2.4",
+    "transformers>=4.46",
+    "trl>=0.12",
+    "datasets>=3.0",
+    "accelerate>=1.0",
+    "peft>=0.13",
+    "wandb>=0.18",
+]
+train-unsloth = [
+    "unsloth",
+    "bitsandbytes>=0.44",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "ipykernel>=6.29",
+]
+
+[project.scripts]
+baba-server = "baba_rlvr.server.main:run"
+baba-pcg = "baba_rlvr.pcg.cli:app"
+baba-eval = "baba_rlvr.eval.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.9.25,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

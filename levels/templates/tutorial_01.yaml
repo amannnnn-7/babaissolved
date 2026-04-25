@@ -1,0 +1,15 @@
+id: tutorial_01
+description: |
+  The classic Baba opener. Walk Baba onto the flag.
+  Tests basic movement + understanding of the WIN rule.
+height: 7
+width: 9
+max_steps: 30
+rows:
+  - "# # # # # # # # #"
+  - "# . . . . . . . #"
+  - "# BABA IS YOU . FLAG IS WIN #"
+  - "# . . . . . . . #"
+  - "# b . . . . . F #"
+  - "# . . . . . . . #"
+  - "# # # # # # # # #"

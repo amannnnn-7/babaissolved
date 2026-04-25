@@ -1,0 +1,16 @@
+id: schema_drift_01
+description: |
+  *Schema drift* template: the path is blocked by walls. The agent must
+  push the WALL text out of "WALL IS STOP" so walls become passable.
+  Tests adaptation when the contract (WALL IS STOP) suddenly changes.
+height: 7
+width: 12
+max_steps: 40
+rows:
+  - "# # # # # # # # # # # #"
+  - "# BABA IS YOU . . WALL IS STOP . . #"
+  - "# . . . . . . . . . . #"
+  - "# b . . # # # . . . F #"
+  - "# . . . . . . . . . . #"
+  - "# . FLAG IS WIN . . . . . . #"
+  - "# # # # # # # # # # # #"

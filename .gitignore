@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+wheels/
+
+# uv
+.uv/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Training artefacts
+ckpt-*/
+runs/
+wandb/
+*.pt
+*.bin
+*.safetensors
+
+# Generated levels
+levels/archive*.pkl
+levels/_generated/
+
+# Memory scratchpads from runs
+memory_runs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

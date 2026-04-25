@@ -15,6 +15,7 @@ dependencies = [
     "rich>=13.7",
     "typer>=0.12",
     "pyyaml>=6.0",
+    "pillow>=12.2.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,7 @@ dev = [
 baba-server = "baba_rlvr.server.main:run"
 baba-pcg = "baba_rlvr.pcg.cli:app"
 baba-eval = "baba_rlvr.eval.cli:app"
+baba-viz = "baba_rlvr.viz.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.9.25,<0.10.0"]

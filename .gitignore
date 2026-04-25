@@ -38,6 +38,9 @@ levels/_generated/
 # Memory scratchpads from runs
 memory_runs/
 
+# Demo artifacts (regenerated locally)
+demo/
+
 # OS
 .DS_Store
 Thumbs.db

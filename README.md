@@ -55,7 +55,12 @@ uv run python -m baba_rlvr.eval.random_agent --episodes 20
 # 4. Generate a curriculum
 uv run baba-pcg generate --iterations 5000 --out levels/archive.pkl
 
-# 5. Train (Colab / GPU box)
+# 5. Visualize a level / trajectory / BFS-solution
+uv run baba-viz frame tutorial_01 --out demo/tut.png
+uv run baba-viz solve schema_drift_01 --out demo/sd.gif
+uv run baba-viz strip tutorial_01 --actions rrrrrr --out demo/strip.png
+
+# 6. Train (Colab / GPU box)
 uv sync --extra train --extra train-unsloth
 uv run python -m baba_rlvr.training.grpo_train
 ```
@@ -71,6 +76,7 @@ src/baba_rlvr/
 ├── memory/        # Agentic scratchpad (lessons.md) gated by verifier
 ├── reward/        # RewardTracker — milestone verifier
 ├── training/      # GRPO trainer (TRL + Unsloth)
+├── viz/           # Pillow-based trajectory & gameplay visualizer
 └── eval/          # Random / heuristic / trained-agent eval harnesses
 levels/            # Hand-built test levels + generated archives
 notebooks/         # Colab demo + ablation plots

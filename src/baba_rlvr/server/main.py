@@ -6,16 +6,28 @@ Endpoints:
     GET  /state/{sid}  -> current observation
     POST /close/{sid}  -> { ok, episode_return, milestones }
     GET  /levels       -> list of registered level ids
+
+Browser play mode (human eval / demo):
+    GET  /play              -> interactive HTML (arrow keys)
+    GET  /play/frame/{sid}.png -> PNG of current state
+    GET  /play/solve/{lvl}  -> { actions: [...] } from BFS solver
 """
 
 from __future__ import annotations
 
+import io
 import os
+from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, Response
 
+from ..engine import Direction  # noqa: F401  (re-exported for convenience)
+from ..levels.loader import load_level
+from ..pcg.solver import bfs_solve
+from ..viz.renderer import render_world
 from .env import BabaEnv, list_levels
 from .schemas import (
     BabaAction,
@@ -36,6 +48,8 @@ app = FastAPI(
 
 # Per-session env registry. Key = session_id (uuid4). Value = BabaEnv instance.
 SESSIONS: dict[str, BabaEnv] = {}
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @app.get("/health")
@@ -82,6 +96,49 @@ def close(sid: str) -> CloseResponse:
         raise HTTPException(404, "Unknown session_id")
     ep_return, milestones = env.episode_summary()
     return CloseResponse(ok=True, episode_return=ep_return, milestones=milestones)
+
+
+# ---------------------------------------------------------------------------
+# Browser play mode — single-page HTML with arrow-key controls.
+# ---------------------------------------------------------------------------
+@app.get("/")
+def index_redirect() -> Response:
+    return Response(
+        status_code=302,
+        headers={"location": "/play"},
+    )
+
+
+@app.get("/play")
+def play_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "play.html", media_type="text/html")
+
+
+@app.get("/play/frame/{sid}.png")
+def play_frame(sid: str) -> Response:
+    if sid not in SESSIONS:
+        raise HTTPException(404, "Unknown session_id")
+    env = SESSIONS[sid]
+    img = render_world(
+        env.world,
+        cell=56,
+        title=env.level_id,
+        step_idx=env.world.step_count,
+    )
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.get("/play/solve/{level_id}")
+def play_solve(level_id: str, max_depth: int = 25) -> dict:
+    if level_id not in list_levels():
+        raise HTTPException(404, f"Unknown level_id: {level_id}")
+    world = load_level(level_id)
+    sol = bfs_solve(world, max_depth=max_depth)
+    if sol is None:
+        return {"actions": None, "reason": f"no solution within depth {max_depth}"}
+    return {"actions": [a.value for a in sol]}
 
 
 def run() -> None:

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Baba Is You — RLVR Play</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #1a1a1f;
+    --panel: #24242c;
+    --text: #ececf0;
+    --dim: #8c8c98;
+    --accent: #82c8e6;
+    --good: #82e69b;
+    --bad: #e68282;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+  #sidebar {
+    width: 280px;
+    padding: 16px 18px;
+    background: var(--panel);
+    border-right: 1px solid #000;
+    overflow-y: auto;
+  }
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 6px 0; }
+  h2 { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin: 18px 0 6px; }
+  select, button {
+    background: #2e2e38;
+    color: var(--text);
+    border: 1px solid #3a3a46;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  select { width: 100%; }
+  button:hover { background: #3a3a46; }
+  .row { display: flex; gap: 6px; margin-top: 8px; }
+  #frame {
+    image-rendering: pixelated;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    max-width: calc(100vw - 320px);
+    height: auto;
+  }
+  #status { margin-top: 12px; font-size: 13px; color: var(--dim); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    background: #2e2e38; font-size: 11px; margin-right: 4px;
+  }
+  .good { color: var(--good); }
+  .bad { color: var(--bad); }
+  kbd {
+    background: #2e2e38; border: 1px solid #3a3a46; border-radius: 3px;
+    padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 11px;
+  }
+  ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>Baba Is You</h1>
+    <div style="font-size:11px;color:var(--dim)">RLVR play mode</div>
+
+    <h2>Level</h2>
+    <select id="level"></select>
+    <div class="row">
+      <button id="reset">Reset</button>
+      <button id="solve">BFS-solve</button>
+    </div>
+
+    <h2>Controls</h2>
+    <ul>
+      <li><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> move</li>
+      <li><kbd>W</kbd> / <kbd>Space</kbd> wait</li>
+      <li><kbd>R</kbd> reset</li>
+    </ul>
+
+    <h2>Episode</h2>
+    <div id="meta" style="font-size:12px;line-height:1.7"></div>
+
+    <h2>Legend</h2>
+    <ul style="color:var(--dim)">
+      <li><b>B</b> baba · <b>R</b> rock · <b>F</b> flag</li>
+      <li><b>#</b> wall · <b>S</b> skull · <b>~</b> lava</li>
+      <li>Peach = NOUN word</li>
+      <li>White = VERB (IS)</li>
+      <li>Cyan = PROPERTY</li>
+    </ul>
+  </aside>
+  <main id="main">
+    <img id="frame" alt="game frame"/>
+    <div id="status">loading…</div>
+  </main>
+
+<script>
+const ACTIONS = {
+  ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+  w: "wait", W: "wait", " ": "wait",
+};
+
+let SID = null;
+let LEVEL = "tutorial_01";
+let EP_RETURN = 0;
+let DONE = false;
+let BUSY = false;
+let STEP_COUNTER = 0;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return r;
+}
+
+function refreshFrame() {
+  // Cache-bust so the browser actually reloads the PNG.
+  document.getElementById("frame").src =
+    `/play/frame/${SID}.png?ts=${Date.now()}`;
+}
+
+function setStatus(html) {
+  document.getElementById("status").innerHTML = html;
+}
+
+function setMeta(obs, lastReward) {
+  const rules = obs.active_rules
+    .map(r => `<span class="pill">${r.subject} IS ${r.predicate}</span>`).join("");
+  const m = document.getElementById("meta");
+  m.innerHTML = `
+    <div>step: ${obs.step_count} / ${obs.max_steps}</div>
+    <div>return: <b>${EP_RETURN.toFixed(2)}</b></div>
+    ${lastReward !== null
+      ? `<div class="${lastReward >= 0 ? 'good' : 'bad'}">last r: ${lastReward >= 0 ? '+' : ''}${lastReward.toFixed(2)}</div>`
+      : ''}
+    <div>YOU: ${obs.you_entities.join(', ') || '—'}</div>
+    <div>WIN: ${obs.win_entities.join(', ') || '—'}</div>
+    <div style="margin-top:6px">${rules || '<span class="pill">no rules</span>'}</div>
+  `;
+}
+
+async function loadLevels() {
+  const r = await api("/levels");
+  const levels = await r.json();
+  const sel = document.getElementById("level");
+  sel.innerHTML = "";
+  for (const l of levels) {
+    const opt = document.createElement("option");
+    opt.value = l; opt.textContent = l;
+    sel.appendChild(opt);
+  }
+  if (levels.includes(LEVEL)) sel.value = LEVEL;
+  else LEVEL = sel.value;
+}
+
+async function reset() {
+  if (SID) {
+    try { await api(`/close/${SID}`, { method: "POST" }); } catch(e) {}
+  }
+  EP_RETURN = 0; DONE = false; STEP_COUNTER = 0;
+  const r = await api("/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ level_id: LEVEL }),
+  });
+  const data = await r.json();
+  SID = data.session_id;
+  setMeta(data.observation, null);
+  refreshFrame();
+  setStatus(`level <b>${LEVEL}</b> loaded — use arrow keys`);
+}
+
+async function step(action) {
+  if (BUSY || DONE || !SID) return;
+  BUSY = true;
+  try {
+    const r = await api(`/step/${SID}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await r.json();
+    EP_RETURN += data.reward;
+    STEP_COUNTER += 1;
+    setMeta(data.observation, data.reward);
+    refreshFrame();
+    if (data.done) {
+      DONE = true;
+      const won = data.info && data.info.won;
+      setStatus(won
+        ? `🏆 <b class="good">WIN</b> in ${STEP_COUNTER} steps · return ${EP_RETURN.toFixed(2)}`
+        : `💀 <b class="bad">end</b> · return ${EP_RETURN.toFixed(2)} · press <kbd>R</kbd> to reset`);
+    } else {
+      setStatus(`action: <b>${action}</b> · r=${data.reward.toFixed(2)}`);
+    }
+  } catch (e) {
+    setStatus(`<span class="bad">error: ${e.message}</span>`);
+  } finally {
+    BUSY = false;
+  }
+}
+
+async function solve() {
+  const r = await api(`/play/solve/${LEVEL}`);
+  const data = await r.json();
+  if (!data.actions) {
+    setStatus(`<span class="bad">solver: no solution within depth limit</span>`);
+    return;
+  }
+  setStatus(`solving: ${data.actions.join('')} (${data.actions.length} moves)`);
+  await reset();
+  for (const a of data.actions) {
+    await step({u:'up',d:'down',l:'left',r:'right',w:'wait'}[a[0]]);
+    await new Promise(res => setTimeout(res, 280));
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "r" || e.key === "R") { reset(); return; }
+  const a = ACTIONS[e.key];
+  if (a) { e.preventDefault(); step(a); }
+});
+document.getElementById("reset").addEventListener("click", reset);
+document.getElementById("solve").addEventListener("click", solve);
+document.getElementById("level").addEventListener("change", (e) => {
+  LEVEL = e.target.value; reset();
+});
+
+(async () => {
+  await loadLevels();
+  await reset();
+})();
+</script>
+</body>
+</html>

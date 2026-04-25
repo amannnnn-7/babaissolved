@@ -36,3 +36,25 @@ def test_full_episode_random():
 def test_invalid_session():
     r = client.post("/step/not-a-session", json={"action": "up"})
     assert r.status_code == 404
+
+
+def test_play_page_served():
+    r = client.get("/play")
+    assert r.status_code == 200
+    assert "Baba Is You" in r.text
+
+
+def test_play_frame_png():
+    r = client.post("/reset", json={"level_id": "tutorial_01"})
+    sid = r.json()["session_id"]
+    r = client.get(f"/play/frame/{sid}.png")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_play_solve_returns_actions():
+    r = client.get("/play/solve/tutorial_01")
+    data = r.json()
+    assert data["actions"] is not None
+    assert len(data["actions"]) <= 10

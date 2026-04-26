@@ -27,11 +27,19 @@ import pyBaba
 # ----------------------------------------------------------------------------
 # Token table. Extend as new sprites are needed.
 # ----------------------------------------------------------------------------
-_ICON_NAMES = ["baba", "rock", "wall", "flag", "skull", "lava", "key", "door", "keke"]
+_ICON_NAMES = [
+    "baba", "rock", "wall", "flag", "skull", "lava", "key", "door", "keke",
+    "water", "grass", "tile", "flower", "ice", "jelly", "crab", "love",
+    "algae", "hedge", "belt", "bug", "robot", "star",
+]
 _TEXT_NAMES = [
     "BABA", "ROCK", "WALL", "FLAG", "SKULL", "LAVA", "KEY", "DOOR", "KEKE",
-    "IS", "HAS", "MAKE",
+    "WATER", "GRASS", "TILE", "FLOWER", "ICE", "JELLY", "CRAB", "LOVE",
+    "ALGAE", "HEDGE", "BELT", "BUG", "ROBOT", "STAR",
+    "IS", "HAS", "MAKE", "AND", "NOT", "ON", "NEAR", "FACING", "LONELY",
     "YOU", "WIN", "STOP", "PUSH", "DEFEAT", "HOT", "MELT", "SINK",
+    "OPEN", "SHUT", "MOVE", "SHIFT", "PULL", "SWAP", "TELE", "FLOAT",
+    "WEAK", "MORE", "SAFE",
 ]
 
 
@@ -45,6 +53,8 @@ def _build_token_map() -> dict[str, int]:
 
 
 _TOKEN_MAP = _build_token_map()
+_ID_TO_TOKEN = {v: k for k, v in _TOKEN_MAP.items() if k}
+_ID_TO_TOKEN[int(pyBaba.ICON_EMPTY)] = "."
 
 
 def tokenize(token: str) -> int:
@@ -53,6 +63,13 @@ def tokenize(token: str) -> int:
     if t in _TOKEN_MAP:
         return _TOKEN_MAP[t]
     raise ValueError(f"Unknown map token: {token!r}")
+
+
+def detokenize(value: int) -> str:
+    """Translate a pyBaba ObjectType integer back to a readable map token."""
+    if value in _ID_TO_TOKEN:
+        return _ID_TO_TOKEN[value]
+    raise ValueError(f"Unknown map object id: {value!r}")
 
 
 def write_map(path: str | Path, rows: list[list[str]]) -> Path:
@@ -74,6 +91,34 @@ def write_map(path: str | Path, rows: list[list[str]]) -> Path:
         lines.append(" ".join(str(tokenize(c)) for c in row))
     out.write_text("\n".join(lines) + "\n")
     return out
+
+
+def read_map(path: str | Path) -> list[list[str]]:
+    """Read a baba-is-auto .txt map into a 2D readable token grid."""
+    map_path = Path(path)
+    parts = map_path.read_text(encoding="utf-8").split()
+    if len(parts) < 2:
+        raise ValueError(f"{map_path} is not a baba-is-auto map: missing header")
+    try:
+        w = int(parts[0])
+        h = int(parts[1])
+    except ValueError as exc:
+        raise ValueError(f"{map_path} has an invalid map header") from exc
+
+    cells = parts[2:]
+    if len(cells) != w * h:
+        raise ValueError(f"{map_path} has {len(cells)} cells, expected {w * h}")
+
+    rows: list[list[str]] = []
+    for y in range(h):
+        row: list[str] = []
+        for raw in cells[y * w : (y + 1) * w]:
+            try:
+                row.append(detokenize(int(raw)))
+            except ValueError as exc:
+                raise ValueError(f"{map_path} contains unsupported cell id {raw!r}") from exc
+        rows.append(row)
+    return rows
 
 
 def parse_grid(text: str) -> list[list[str]]:

@@ -1,6 +1,6 @@
 """Per-session environment wrapper.
 
-Wraps the pure-Python `engine.World` with reward bookkeeping and OpenEnv-
+Wraps the pyBaba-backed `engine.World` with reward bookkeeping and OpenEnv-
 shaped observation conversion.
 """
 

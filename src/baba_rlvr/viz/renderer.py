@@ -2,9 +2,8 @@
 
 Design choices
 --------------
-* No sprite assets — we draw shapes + colored letters with the default PIL
-  font so the visualizer works in any environment (Colab, CI, headless boxes)
-  without shipping copyrighted sprites.
+* Prefer the vendored baba-is-auto sprites when available, with a shape fallback
+  so rendering still works in headless/minimal environments.
 * Each entity has a glyph + base color; each text block is drawn as a
   rounded rectangle with the word inside, color-coded by category
   (noun=peach, verb=white, property=cyan/red).
@@ -19,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ..engine import Direction, EntityKind, Tile, World, WordKind
+from ..engine import Direction, EntityKind, Tile, WordKind, World
 from ..engine.types import NOUN_WORDS, PROPERTY_WORDS, VERB_WORDS
 
 # ----------------------------------------------------------------------------
@@ -41,6 +40,20 @@ ENTITY_COLORS: dict[EntityKind, tuple[int, int, int]] = {
     EntityKind.KEKE: (240, 120, 200),   # pink
     EntityKind.DOOR: (140, 90, 200),    # purple
     EntityKind.KEY: (250, 235, 150),    # pale gold
+    EntityKind.WATER: (60, 130, 230),
+    EntityKind.GRASS: (80, 180, 90),
+    EntityKind.TILE: (120, 120, 130),
+    EntityKind.FLOWER: (250, 130, 210),
+    EntityKind.ICE: (160, 230, 255),
+    EntityKind.JELLY: (180, 120, 240),
+    EntityKind.CRAB: (230, 80, 70),
+    EntityKind.LOVE: (245, 80, 130),
+    EntityKind.ALGAE: (40, 150, 110),
+    EntityKind.HEDGE: (40, 120, 60),
+    EntityKind.BELT: (90, 90, 100),
+    EntityKind.BUG: (120, 190, 80),
+    EntityKind.ROBOT: (170, 180, 200),
+    EntityKind.STAR: (255, 230, 80),
 }
 
 ENTITY_GLYPHS: dict[EntityKind, str] = {
@@ -53,11 +66,34 @@ ENTITY_GLYPHS: dict[EntityKind, str] = {
     EntityKind.KEKE: "K",
     EntityKind.DOOR: "D",
     EntityKind.KEY: "k",
+    EntityKind.WATER: "~",
+    EntityKind.GRASS: "'",
+    EntityKind.TILE: "_",
+    EntityKind.FLOWER: "*",
+    EntityKind.ICE: "I",
+    EntityKind.JELLY: "J",
+    EntityKind.CRAB: "C",
+    EntityKind.LOVE: "L",
+    EntityKind.ALGAE: "A",
+    EntityKind.HEDGE: "H",
+    EntityKind.BELT: "=",
+    EntityKind.BUG: "G",
+    EntityKind.ROBOT: "Rb",
+    EntityKind.STAR: "*",
 }
 
 NOUN_BG = (250, 200, 160)   # peach
 VERB_BG = (235, 235, 240)   # near-white
 PROP_BG = (130, 200, 230)   # cyan
+_SPRITES_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "vendor"
+    / "baba-is-auto"
+    / "Extensions"
+    / "BabaGUI"
+    / "sprites"
+)
+_SPRITE_CACHE: dict[tuple[str, int], Image.Image | None] = {}
 
 
 def _word_bg(w: WordKind) -> tuple[int, int, int]:
@@ -128,7 +164,7 @@ def _draw_tile(
 
     if e == EntityKind.WALL:
         draw.rectangle([x + 1, y + 1, x + cell - 1, y + cell - 1], fill=color)
-    elif e == EntityKind.LAVA:
+    elif e in {EntityKind.LAVA, EntityKind.WATER}:
         draw.rectangle([x + 1, y + 1, x + cell - 1, y + cell - 1], fill=color)
         draw.line([x, y + cell // 2, x + cell, y + cell // 2], fill=(255, 200, 100), width=1)
     else:
@@ -157,6 +193,41 @@ def _draw_tile(
         draw.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=(255, 255, 255))
 
 
+def _sprite_path(tile: Tile) -> Path | None:
+    if tile.words:
+        return _SPRITES_DIR / "text" / f"{tile.words[0].value}.gif"
+    if tile.entities:
+        return _SPRITES_DIR / "icon" / f"{tile.entities[0].value.upper()}.gif"
+    return None
+
+
+def _load_sprite(path: Path, cell: int) -> Image.Image | None:
+    key = (str(path), cell)
+    if key in _SPRITE_CACHE:
+        return _SPRITE_CACHE[key]
+    if not path.exists():
+        _SPRITE_CACHE[key] = None
+        return None
+    try:
+        img = Image.open(path).convert("RGBA").resize((cell, cell), Image.Resampling.NEAREST)
+    except OSError:
+        _SPRITE_CACHE[key] = None
+        return None
+    _SPRITE_CACHE[key] = img
+    return img
+
+
+def _draw_sprite_tile(img: Image.Image, tile: Tile, x: int, y: int, cell: int) -> bool:
+    path = _sprite_path(tile)
+    if path is None:
+        return True
+    sprite = _load_sprite(path, cell)
+    if sprite is None:
+        return False
+    img.alpha_composite(sprite, (x, y))
+    return True
+
+
 # ----------------------------------------------------------------------------
 # Public: render a single world
 # ----------------------------------------------------------------------------
@@ -169,14 +240,17 @@ def render_world(
     action_taken: str | None = None,
     reward: float | None = None,
     step_idx: int | None = None,
+    backend: str = "sprites",
 ) -> Image.Image:
     """Render a single world state to a PIL Image with rule sidebar."""
+    if backend not in {"sprites", "shapes"}:
+        raise ValueError(f"unknown render backend: {backend}")
     grid_w = world.width * cell
     grid_h = world.height * cell
     pad = 16
     img_w = grid_w + sidebar_w + pad * 3
     img_h = max(grid_h, 360) + pad * 2 + 30
-    img = Image.new("RGB", (img_w, img_h), BG_COLOR)
+    img = Image.new("RGBA", (img_w, img_h), (*BG_COLOR, 255))
     draw = ImageDraw.Draw(img)
 
     # Title bar
@@ -193,7 +267,11 @@ def render_world(
         draw.line([gx + c * cell, gy, gx + c * cell, gy + grid_h], fill=GRID_COLOR)
     for y in range(world.height):
         for x in range(world.width):
-            _draw_tile(draw, world.grid[y][x], gx + x * cell, gy + y * cell, cell)
+            tile = world.grid[y][x]
+            tx, ty = gx + x * cell, gy + y * cell
+            if backend == "sprites" and _draw_sprite_tile(img, tile, tx, ty, cell):
+                continue
+            _draw_tile(draw, tile, tx, ty, cell)
 
     # Sidebar
     sx = gx + grid_w + pad
@@ -252,7 +330,7 @@ def render_world(
     elif world.lost:
         _draw_banner(draw, img_w, img_h, "LOST", (220, 80, 80))
 
-    return img
+    return img.convert("RGB")
 
 
 def _draw_banner(draw: ImageDraw.ImageDraw, w: int, h: int, text: str, color) -> None:
@@ -318,6 +396,7 @@ def render_trajectory_gif(
     title: str = "",
     rewards: list[float] | None = None,
     duration_ms: int = 400,
+    backend: str = "sprites",
 ) -> Path:
     """Save an animated GIF of a trajectory."""
     images: list[Image.Image] = []
@@ -331,6 +410,7 @@ def render_trajectory_gif(
                 action_taken=a.value if a else None,
                 reward=r,
                 step_idx=i,
+                backend=backend,
             )
         )
     out = Path(out)
@@ -353,6 +433,7 @@ def render_trajectory_strip(
     cell: int = 36,
     cols: int = 6,
     title: str = "",
+    backend: str = "sprites",
 ) -> Path:
     """Save a single PNG with all frames laid out in a grid (good for blogs)."""
     panels = [
@@ -363,6 +444,7 @@ def render_trajectory_strip(
             title="",
             action_taken=a.value if a else None,
             step_idx=i,
+            backend=backend,
         )
         for i, (w, a, _info) in enumerate(frames)
     ]

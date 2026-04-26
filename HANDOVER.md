@@ -12,18 +12,19 @@ submission to the Meta × OpenEnv Hackathon (Scaler School of Technology,
 April 25–26 2026), Round 2.
 
 ## Project location
-- Working directory: ~/baba-rlvr
+- Working directory: ~/babaissolved
 - Python env: uv-managed venv at .venv/  (Python 3.11)
+- `uv` may be installed at `$HOME/.local/bin/uv`; export that PATH first.
 - C++ engine: vendored at vendor/baba-is-auto/ (utilForever/baba-is-auto, MIT)
-- Build toolchain: conda-forge env "babaenv" at ~/miniconda3/envs/babaenv/
-  (no sudo on this box). Build script: scripts/build_pybaba.sh.
+- Build scripts: scripts/setup_vendor.sh and scripts/build_pybaba.sh.
 
 ## What this project is
 A FastAPI **OpenEnv** server that exposes *Baba Is You* (a puzzle game where
 the rules of physics are themselves movable objects on the grid) as an
 RLVR training environment for LLM agents. Reward is verifier-gated through
 hand-defined milestones (first_rule_break, self_redefine, win_condition_made,
-etc.). Trained with **GRPO** via TRL + Unsloth (Qwen2.5-3B-Instruct-bnb-4bit).
+etc.). Trained with **GRPO** via TRL + Unsloth (default run script uses
+Qwen/Qwen3-4B-Instruct-2507; override `MODEL_ID` for another HF Qwen checkpoint).
 **MAP-Elites PCG** generates a difficulty-stratified curriculum. Optional
 **agentic memory scratchpad** (verifier-gated lessons.md) is a hybrid with
 weight updates.
@@ -32,44 +33,38 @@ weight updates.
 1. We initially shipped a pure-Python Baba engine. It was bug-prone (push
    chains, NOUN-IS-NOUN transforms incomplete), so we **pivoted** to wrap
    the battle-tested C++ `pyBaba` library from utilForever/baba-is-auto.
-2. We patched two upstream pybind11 binding files (added
-   `#include <pybind11/stl.h>`, exposed `Rule.objects`) — see
-   ARCHITECTURE.md §3 for exact paths.
+2. We patch upstream pybind11 bindings and small C++ gameplay logic through
+   `scripts/patches/baba-is-auto-bindings.patch` — see ARCHITECTURE.md §3.
 3. We rewrote `src/baba_rlvr/engine/world.py` as a thin adapter over
    `pyBaba.Game` while preserving the same public `World` API (so the
    server, reward tracker, renderer, solver, and tests didn't need
-   sweeping changes). All 19 tests pass post-pivot.
+   sweeping changes). The current suite has 29 tests.
 4. Levels were converted from YAML token-rows to baba-is-auto **.txt
    integer-ID maps** under `levels/templates/*.txt`. The loader now also
-   exposes vendored upstream maps with a `vendor_` prefix.
+   exposes vendored upstream maps with a `vendor_` prefix and generated maps
+   under `levels/_generated`.
+5. Early-pack mechanics now include visible water and `AND`, `SINK`, and
+   `OPEN`/`SHUT` behavior tested in `tests/test_mechanics.py`.
 
 ## Required reading before you do ANYTHING
 Open these three files at the repo root **in this order** and read them
 fully:
   1. ARCHITECTURE.md  — module-by-module map of the codebase.
   2. ROADMAP.md       — exactly what is missing, prioritized P0/P1/P2.
-  3. README.md        — current pitch (note: still slightly stale — its
-                        rewrite is item P0/§2 in ROADMAP).
+  3. README.md        — current pitch and setup commands.
 
-Then run `uv run pytest -q` to confirm the baseline (should be 19/19 green).
+Then run `uv run pytest -q` to confirm the baseline (should be 29/29 green).
 If pytest fails because pyBaba isn't importable, run
 `bash scripts/build_pybaba.sh` first.
 
-## Your task (unless I say otherwise)
-Work P0 items in ROADMAP.md, in order:
-  §1  Rewrite pcg/map_elites.py for the new {map_path, max_steps} spec
-  §2  Refresh README.md
-  §3  Regenerate demo artifacts under demo/
-  §4  End-to-end GRPO smoke test (--smoke flag, no GPU needed)
-
-Then continue with P1 items as time allows. Use ROADMAP's "Verification
-matrix" to track progress.
+## Current next task
+Use ROADMAP's verification matrix to track any remaining polish. The P0
+setup/PCG/docs/demo path is complete; the current priority is presentation
+and any extra mechanics tests needed for the chosen demo levels.
 
 ## Engineering ground rules
-- Do not modify the upstream `vendor/baba-is-auto/` C++ source files
-  except for the two pybind11 binding files we already patched
-  (RuleManager.cpp, Rule.cpp). If a third patch becomes necessary,
-  call it out before applying.
+- Keep vendor changes reproducible through
+  `scripts/patches/baba-is-auto-bindings.patch`.
 - Keep the public `World` API stable. Downstream consumers (server/env.py,
   reward/tracker.py, viz/renderer.py, pcg/solver.py) rely on:
   `step / clone / parse_rules / rules / you_entities / win_entities /
@@ -96,9 +91,9 @@ uv run baba-server
 xdg-open http://localhost:8000/play
 
 # CLI smoke
-uv run baba-viz frame --level tutorial_01 --out /tmp/t.png
-uv run baba-eval random --level tutorial_01 --episodes 20
-uv run baba-pcg generate --iterations 200    # currently broken — see §1
+uv run baba-viz frame tutorial_01 --out /tmp/t.png
+uv run baba-eval random --level-id tutorial_01 --episodes 20
+uv run baba-pcg generate --iterations 200
 
 # GRPO smoke (CPU)
 uv run python -m baba_rlvr.training.grpo_train --smoke --env-url http://localhost:8000

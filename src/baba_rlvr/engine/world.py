@@ -56,10 +56,37 @@ _register_noun("LAVA", EntityKind.LAVA, WordKind.W_LAVA)
 _register_noun("KEKE", EntityKind.KEKE, WordKind.W_KEKE)
 _register_noun("DOOR", EntityKind.DOOR, WordKind.W_DOOR)
 _register_noun("KEY", EntityKind.KEY, WordKind.W_KEY)
+_register_noun("WATER", EntityKind.WATER, WordKind.W_WATER)
+_register_noun("GRASS", EntityKind.GRASS, WordKind.W_GRASS)
+_register_noun("TILE", EntityKind.TILE, WordKind.W_TILE)
+_register_noun("FLOWER", EntityKind.FLOWER, WordKind.W_FLOWER)
+_register_noun("ICE", EntityKind.ICE, WordKind.W_ICE)
+_register_noun("JELLY", EntityKind.JELLY, WordKind.W_JELLY)
+_register_noun("CRAB", EntityKind.CRAB, WordKind.W_CRAB)
+_register_noun("LOVE", EntityKind.LOVE, WordKind.W_LOVE)
+_register_noun("ALGAE", EntityKind.ALGAE, WordKind.W_ALGAE)
+_register_noun("HEDGE", EntityKind.HEDGE, WordKind.W_HEDGE)
+_register_noun("BELT", EntityKind.BELT, WordKind.W_BELT)
+_register_noun("BUG", EntityKind.BUG, WordKind.W_BUG)
+_register_noun("ROBOT", EntityKind.ROBOT, WordKind.W_ROBOT)
+_register_noun("STAR", EntityKind.STAR, WordKind.W_STAR)
 
 # Verb + properties we surface in our contract.
-_WORDKIND_BY_TEXT[int(pyBaba.IS)] = WordKind.W_IS
-_TEXT_BY_WORDKIND[WordKind.W_IS] = int(pyBaba.IS)
+for _name, _wk in {
+    "IS": WordKind.W_IS,
+    "HAS": WordKind.W_HAS,
+    "MAKE": WordKind.W_MAKE,
+    "AND": WordKind.W_AND,
+    "NOT": WordKind.W_NOT,
+    "ON": WordKind.W_ON,
+    "NEAR": WordKind.W_NEAR,
+    "FACING": WordKind.W_FACING,
+    "LONELY": WordKind.W_LONELY,
+}.items():
+    _obj = getattr(pyBaba, _name, None)
+    if _obj is not None:
+        _WORDKIND_BY_TEXT[int(_obj)] = _wk
+        _TEXT_BY_WORDKIND[_wk] = int(_obj)
 
 _PROPERTY_BY_TEXT: dict[int, Property] = {
     int(pyBaba.YOU): Property.YOU,
@@ -70,6 +97,17 @@ _PROPERTY_BY_TEXT: dict[int, Property] = {
     int(pyBaba.HOT): Property.HOT,
     int(pyBaba.MELT): Property.MELT,
     int(pyBaba.SINK): Property.SINK,
+    int(pyBaba.OPEN): Property.OPEN,
+    int(pyBaba.SHUT): Property.SHUT,
+    int(pyBaba.MOVE): Property.MOVE,
+    int(pyBaba.SHIFT): Property.SHIFT,
+    int(pyBaba.PULL): Property.PULL,
+    int(pyBaba.SWAP): Property.SWAP,
+    int(pyBaba.TELE): Property.TELE,
+    int(pyBaba.FLOAT): Property.FLOAT,
+    int(pyBaba.WEAK): Property.WEAK,
+    int(pyBaba.MORE): Property.MORE,
+    int(pyBaba.SAFE): Property.SAFE,
 }
 for _ot, _prop in _PROPERTY_BY_TEXT.items():
     # Map property words to our WordKind so the renderer can color them.
@@ -149,10 +187,51 @@ class World:
                 row.append(Tile(entities=tuple(ents), words=tuple(words)))
             grid.append(row)
         self.grid = grid
+        self._augment_rules()
         self.rules = self._extract_rules()
         ps = self._game.GetPlayState()
         self.won = ps == pyBaba.PlayState.WON
         self.lost = ps == pyBaba.PlayState.LOST
+
+    def _augment_rules(self) -> None:
+        """Add AND-expanded rules that baba-is-auto's parser does not emit."""
+        rm = self._game.GetRuleManager()
+        existing = {
+            _rule_key(rule)
+            for known in (*_TEXT_BY_WORDKIND.values(), *_PROPERTY_BY_TEXT.keys())
+            for rule in rm.GetRules(pyBaba.ObjectType(known))
+        }
+        to_add = [rule for rule in self._scan_and_rules() if rule not in existing]
+        for subject, verb, predicate in to_add:
+            key = (subject, verb, predicate)
+            rm.AddRule(
+                pyBaba.Rule(
+                    pyBaba.Object([pyBaba.ObjectType(subject)]),
+                    pyBaba.Object([pyBaba.ObjectType(verb)]),
+                    pyBaba.Object([pyBaba.ObjectType(predicate)]),
+                )
+            )
+            existing.add(key)
+
+    def _scan_and_rules(self) -> set[tuple[int, int, int]]:
+        out: set[tuple[int, int, int]] = set()
+        for y in range(self.height):
+            for x in range(self.width):
+                out |= self._scan_line(x, y, 1, 0)
+                out |= self._scan_line(x, y, 0, 1)
+        return out
+
+    def _scan_line(self, x: int, y: int, dx: int, dy: int) -> set[tuple[int, int, int]]:
+        tokens: list[int] = []
+        cx, cy = x, y
+        while 0 <= cx < self.width and 0 <= cy < self.height:
+            text = _first_text_type(self._game.GetMap().At(cx, cy))
+            if text is None:
+                break
+            tokens.append(int(text))
+            cx += dx
+            cy += dy
+        return _expand_rule_tokens(tokens)
 
     def _extract_rules(self) -> set[tuple[EntityKind, Property]]:
         """Read the active rule set from the C++ RuleManager.
@@ -165,7 +244,7 @@ class World:
         seen: set[tuple[int, int]] = set()
         out: set[tuple[EntityKind, Property]] = set()
         # Iterate over every noun token we know about and collect its rules.
-        for ent, icon_id in _ICON_BY_ENTITY.items():
+        for ent in _ICON_BY_ENTITY:
             text_id = _TEXT_BY_WORDKIND.get(_word_for_entity(ent))
             if text_id is None:
                 continue
@@ -198,7 +277,6 @@ class World:
         info: dict = {"died": False, "moved": False, "invalid_move": False}
         if self.won or self.lost:
             return info
-        prev_state = (self.won, self.lost)
         prev_you_count = sum(
             1
             for row in self.grid
@@ -297,6 +375,20 @@ _NOUN_TO_ENTITY: dict[WordKind, EntityKind] = {
     WordKind.W_KEKE: EntityKind.KEKE,
     WordKind.W_DOOR: EntityKind.DOOR,
     WordKind.W_KEY: EntityKind.KEY,
+    WordKind.W_WATER: EntityKind.WATER,
+    WordKind.W_GRASS: EntityKind.GRASS,
+    WordKind.W_TILE: EntityKind.TILE,
+    WordKind.W_FLOWER: EntityKind.FLOWER,
+    WordKind.W_ICE: EntityKind.ICE,
+    WordKind.W_JELLY: EntityKind.JELLY,
+    WordKind.W_CRAB: EntityKind.CRAB,
+    WordKind.W_LOVE: EntityKind.LOVE,
+    WordKind.W_ALGAE: EntityKind.ALGAE,
+    WordKind.W_HEDGE: EntityKind.HEDGE,
+    WordKind.W_BELT: EntityKind.BELT,
+    WordKind.W_BUG: EntityKind.BUG,
+    WordKind.W_ROBOT: EntityKind.ROBOT,
+    WordKind.W_STAR: EntityKind.STAR,
 }
 
 _ENTITY_TO_NOUN: dict[EntityKind, WordKind] = {v: k for k, v in _NOUN_TO_ENTITY.items()}
@@ -309,6 +401,71 @@ def _word_for_entity(ent: EntityKind) -> WordKind:
 def _first_type(obj: pyBaba.Object) -> pyBaba.ObjectType | None:
     ts = obj.GetTypes()
     return ts[0] if ts else None
+
+
+def _first_text_type(obj: pyBaba.Object) -> pyBaba.ObjectType | None:
+    for t in obj.GetTypes():
+        ti = int(t)
+        if ti in _WORDKIND_BY_TEXT or ti in _PROPERTY_BY_TEXT:
+            return t
+    return None
+
+
+def _rule_key(rule) -> tuple[int | None, int | None, int | None]:
+    o1, o2, o3 = rule.objects
+    t1 = _first_type(o1)
+    t2 = _first_type(o2)
+    t3 = _first_type(o3)
+    return (
+        int(t1) if t1 is not None else None,
+        int(t2) if t2 is not None else None,
+        int(t3) if t3 is not None else None,
+    )
+
+
+def _expand_rule_tokens(tokens: list[int]) -> set[tuple[int, int, int]]:
+    rules: set[tuple[int, int, int]] = set()
+    for verb_i, verb in enumerate(tokens):
+        if verb not in _VERB_TOKENS:
+            continue
+        subjects = _collect_terms(tokens, verb_i - 1, -1, _NOUN_TEXT_TOKENS)
+        predicates = _collect_terms(
+            tokens,
+            verb_i + 1,
+            1,
+            _NOUN_TEXT_TOKENS | set(_PROPERTY_BY_TEXT),
+        )
+        for subject in subjects:
+            for predicate in predicates:
+                rules.add((subject, verb, predicate))
+    return rules
+
+
+def _collect_terms(tokens: list[int], start: int, step: int, allowed: set[int]) -> list[int]:
+    terms: list[int] = []
+    i = start
+    expect_term = True
+    while 0 <= i < len(tokens):
+        token = tokens[i]
+        if expect_term:
+            if token not in allowed:
+                break
+            terms.append(token)
+        elif token != int(pyBaba.AND):
+            break
+        expect_term = not expect_term
+        i += step
+    if step < 0:
+        terms.reverse()
+    return terms if not expect_term else []
+
+
+_NOUN_TEXT_TOKENS = {int(k) for k in _WORDKIND_BY_TEXT if _WORDKIND_BY_TEXT[k] in _NOUN_TO_ENTITY}
+_VERB_TOKENS = {
+    int(_TEXT_BY_WORDKIND[w])
+    for w in (WordKind.W_IS, WordKind.W_HAS, WordKind.W_MAKE)
+    if w in _TEXT_BY_WORDKIND
+}
 
 
 # ---------------------------------------------------------------------------

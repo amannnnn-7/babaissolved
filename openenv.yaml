@@ -1,0 +1,8 @@
+spec_version: 1
+name: baba-rlvr
+version: "0.1.0"
+description: Baba Is You RLVR environment for the OpenEnv Hackathon.
+type: space
+runtime: fastapi
+app: server:app
+port: 8000

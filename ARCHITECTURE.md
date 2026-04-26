@@ -15,7 +15,7 @@ module, what it does, and how the pieces connect. Pair it with
 baba-rlvr/
 ├── pyproject.toml            # uv project, deps, console-scripts
 ├── uv.lock
-├── README.md                 # pitch & quickstart (NOTE: still references pure-Python engine)
+├── README.md                 # pitch & quickstart
 ├── ARCHITECTURE.md           # ← this file
 ├── ROADMAP.md                # what's missing + plan
 ├── HANDOVER.md               # next-session prompt
@@ -32,7 +32,7 @@ baba-rlvr/
 │   ├── training/             # GRPO trainer + prompts + reward callable
 │   └── client/               # tiny HTTP client for the OpenEnv server
 │
-├── tests/                    # pytest suite (currently 19/19 green)
+├── tests/                    # pytest suite (currently 29/29 green)
 ├── levels/templates/         # custom RLVR puzzles in baba-is-auto .txt format
 ├── vendor/baba-is-auto/      # cloned C++ engine (utilForever/baba-is-auto)
 │   └── Extensions/BabaPython/  # pybind11 bindings — patched
@@ -51,9 +51,12 @@ baba-rlvr/
 Stable string-enum vocabulary used everywhere. Survives serialization to JSON
 and into LLM prompts.
 - `Direction` — `up/down/left/right/wait` plus `.delta` helper.
-- `EntityKind` — `baba/rock/wall/flag/skull/lava/keke/door/key`.
-- `WordKind` — every text token we surface (nouns, `IS`, properties).
-- `Property` — `YOU/WIN/STOP/PUSH/KILL/DEFEAT/SINK/MELT/HOT`.
+- `EntityKind` — early-pack objects including `baba/rock/wall/flag/skull/lava`,
+  `keke/door/key/water/ice/jelly/crab/love/algae`.
+- `WordKind` — every text token we surface (nouns, `IS`, `AND`, properties,
+  and condition/operator words).
+- `Property` — `YOU/WIN/STOP/PUSH/KILL/DEFEAT/SINK/MELT/HOT/OPEN/SHUT/MOVE`
+  plus other early-pack properties represented in prompts and maps.
 - `Tile` — frozen dataclass `(entities, words)` with `.render()` glyph.
 - Tables: `NOUN_WORDS`, `PROPERTY_WORDS`, `VERB_WORDS`.
 
@@ -76,6 +79,15 @@ Translation tables `_ENTITY_BY_ICON`, `_WORDKIND_BY_TEXT`,
 readable string enums; unknown / exotic ObjectTypes are silently dropped
 from the projection (they still execute in C++).
 
+`baba-is-auto` handles the core game loop, while the Python adapter augments the
+upstream parser with `AND` expansion for early-pack rules such as `BABA IS YOU
+AND SINK`, `KEY IS PUSH AND OPEN`, and `HEDGE AND DOOR IS STOP`.
+
+The vendored engine patch in `scripts/patches/baba-is-auto-bindings.patch`
+contains the pybind projection fixes plus small C++ gameplay fixes for `SINK`
+and `OPEN`/`SHUT`, so a fresh `scripts/setup_vendor.sh` run can reproduce the
+same mechanics.
+
 ### `engine/__init__.py`
 Re-exports the public surface.
 
@@ -94,6 +106,12 @@ Cloned with `--recursive` from `utilForever/baba-is-auto` (MIT). Submodules:
 - `Extensions/BabaPython/Sources/Rules/Rule.cpp` — added `stl.h` plus
   `def_readwrite("objects", &Rule::objects)` to expose the
   `(Object, Object, Object)` triple to Python.
+- `Extensions/BabaPython/Sources/Games/Game.cpp` — returns `GetMap()` and
+  `GetRuleManager()` by reference so Python projections and injected rules are
+  applied to the live game.
+- `Includes/baba-is-auto/Games/Game.hpp` and
+  `Sources/baba-is-auto/Games/Game.cpp` — small gameplay fixes for early-pack
+  `SINK` and `OPEN`/`SHUT` interactions.
 
 **Build entry point**: `scripts/build_pybaba.sh` (uses a conda-forge
 toolchain so no sudo is required).
@@ -207,34 +225,31 @@ max_depth=30, max_nodes=50_000)` returns a shortest action sequence or
 > levels this is fine (<1 s); deeper search may need the
 > `Preprocess.StateToTensor(game)` snapshot for hashing instead.
 
-### `pcg/map_elites.py`  ⚠️ **BROKEN — needs rewrite**
-Uses the **old YAML-rows spec format** (`spec["rows"]`, `"."`, `"#"`,
-`"BABA"`). After the engine pivot, specs are `{"map_path", "max_steps"}`.
-The mutator must operate on tokenized 2D grids and write `.txt` maps via
-`levels.map_writer`. See [ROADMAP.md](ROADMAP.md) §1.
+### `pcg/map_elites.py`
+MAP-Elites over the current `{"map_path", "max_steps"}` level specs. It reads
+`.txt` maps back into readable token grids with `levels.map_writer.read_map`,
+applies small grammar-preserving mutations (`swap_cells`, `place_wall`,
+`remove_wall`, `shift_rule`), writes children under `levels/_generated/`, and
+verifies solvability with the BFS solver before inserting elites.
 
 ### `pcg/cli.py`
-Typer CLI: `uv run baba-pcg generate ...`, `... show archive.pkl`. Currently
-broken transitively because of `map_elites.py`.
+Typer CLI: `uv run baba-pcg generate ...`, `... show archive.pkl`.
 
 ---
 
 ## 8. Visualization: `src/baba_rlvr/viz/`
 
 ### `viz/renderer.py`
-PIL-based renderer. No sprite assets — draws shapes + colored letters
-with DejaVu/Arial. Compatible with the new `World`:
-- `render_world(world, *, cell, sidebar_w, title, action_taken, reward, step_idx)` → `PIL.Image`
+PIL-based renderer. Uses vendored `baba-is-auto` sprites from
+`Extensions/BabaGUI/sprites/` by default, with the previous shape/letter
+renderer as a fallback and explicit `backend="shapes"` option. Compatible with
+the new `World`:
+- `render_world(world, *, cell, sidebar_w, title, action_taken, reward, step_idx, backend)` → `PIL.Image`
 - `render_trajectory_gif(frames, out, ...)` → animated GIF
 - `render_trajectory_strip(frames, out, ...)` → multi-panel PNG
 - `rollout_actions(world, actions)` → list of `(world_clone, action, info)`
   frames (terminates on `won`/`lost`)
 - `actions_from_strings(["u","r",...])` → `list[Direction]`
-
-> 💡 The vendored sprites live at
-> `vendor/baba-is-auto/Extensions/BabaRL/baba-babaisyou-v0/sprites/` with a
-> `pygame`-based reference renderer. Wiring them in (optional) is in
-> [ROADMAP.md](ROADMAP.md) §4.
 
 ### `viz/cli.py`
 Typer CLI exposed as `baba-viz`: `frame`, `play`, `solve`, `strip`
@@ -258,11 +273,12 @@ the rest of the episode is driven via an injected `GenerateFn` against a
 running env server. Returns the trajectory return as the scalar reward.
 
 ### `training/grpo_train.py`
-Single-GPU Colab-friendly training entry point (`uv run python -m
-baba_rlvr.training.grpo_train --env-url ... --model unsloth/Qwen2.5-3B-Instruct-bnb-4bit`).
-Optional `--smoke` for CPU pipeline tests. Loads either the built-in level
-templates or a MAP-Elites archive (`--curriculum levels/archive.pkl`).
-**Not yet end-to-end tested with the new engine.**
+Single-GPU training entry point (`uv run python -m
+baba_rlvr.training.grpo_train --env-url ... --model Qwen/Qwen3-4B-Instruct-2507`)
+plus `scripts/run_qwen_a100_grpo.sh` for a one-A100 run. Optional `--smoke`
+for CPU pipeline tests. Loads built-in templates, a MAP-Elites archive
+(`--curriculum levels/archive.pkl`), or a directory of generated `.txt` maps
+(`--curriculum levels/_generated`).
 
 ---
 
@@ -280,11 +296,14 @@ training loop and could be re-used by external evaluation scripts.
 
 ## 11. Tests: `tests/`
 
-19 tests, all passing post-pivot.
+29 tests, all passing after the pyBaba pivot, early-pack mechanics expansion,
+and diverse-PCG generator.
 
 - `test_engine.py` — level loads, hand-computed solution wins, rule parsing.
 - `test_reward.py` — step cost, milestone fires once, win dominates,
   loop-farming blocked.
+- `test_mechanics.py` — visible water, `AND` expansion, `SINK`, and
+  `OPEN`/`SHUT`.
 - `test_solver.py` — BFS finds the tutorial solution.
 - `test_server.py` — health, levels listed, full episode through HTTP, 404
   on unknown session, `/play` page served, `/play/frame/{sid}.png` PNG
@@ -303,7 +322,7 @@ training loop and could be re-used by external evaluation scripts.
 | Run server           | `uv run baba-server` (defaults `0.0.0.0:8000`) |
 | Browser play         | open `http://localhost:8000/play` |
 | Tests                | `uv run pytest -q` |
-| Generate curriculum  | `uv run baba-pcg generate` *(currently broken — see ROADMAP)* |
+| Generate curriculum  | `uv run baba-pcg generate --iterations 200 --out levels/archive.pkl` |
 | Train (GPU)          | `uv run python -m baba_rlvr.training.grpo_train ...` *(needs end-to-end run)* |
 
 Environment variables consumed: `BABA_HOST`, `BABA_PORT`, `BABA_MEMORY_DIR`.

@@ -1,3 +1,26 @@
+diff --git a/Extensions/BabaPython/Sources/Games/Game.cpp b/Extensions/BabaPython/Sources/Games/Game.cpp
+index d9a1f50..0373fa8 100644
+--- a/Extensions/BabaPython/Sources/Games/Game.cpp
++++ b/Extensions/BabaPython/Sources/Games/Game.cpp
+@@ -16,10 +16,13 @@ void AddGame(pybind11::module& m)
+     pybind11::class_<Game>(m, "Game")
+         .def(pybind11::init<std::string_view>())
+         .def("Reset", &Game::Reset)
+-        .def("GetMap", static_cast<Map& (Game::*)()>(&Game::GetMap))
+-        .def("GetMap", static_cast<const Map& (Game::*)() const>(&Game::GetMap))
+-        .def("GetRuleManager", &Game::GetRuleManager)
++        .def("GetMap", static_cast<Map& (Game::*)()>(&Game::GetMap),
++             pybind11::return_value_policy::reference_internal)
++        .def("GetMap", static_cast<const Map& (Game::*)() const>(&Game::GetMap),
++             pybind11::return_value_policy::reference_internal)
++        .def("GetRuleManager", &Game::GetRuleManager,
++             pybind11::return_value_policy::reference_internal)
+         .def("GetPlayState", &Game::GetPlayState)
+         .def("GetPlayerIcon", &Game::GetPlayerIcon)
+         .def("MovePlayer", &Game::MovePlayer);
+-}
+\ No newline at end of file
++}
 diff --git a/Extensions/BabaPython/Sources/Rules/Rule.cpp b/Extensions/BabaPython/Sources/Rules/Rule.cpp
 index c4934db..f8f7b49 100644
 --- a/Extensions/BabaPython/Sources/Rules/Rule.cpp
@@ -31,3 +54,199 @@ index 15b31d8..e390b79 100644
  
  using namespace baba_is_auto;
  
+diff --git a/Includes/baba-is-auto/Games/Game.hpp b/Includes/baba-is-auto/Games/Game.hpp
+index 276e35d..6ead9fd 100644
+--- a/Includes/baba-is-auto/Games/Game.hpp
++++ b/Includes/baba-is-auto/Games/Game.hpp
+@@ -69,7 +69,8 @@ class Game
+     //! \param y The y position.
+     //! \param dir The direction to move.
+     //! \return The flag indicates that an object can move.
+-    bool CanMove(std::size_t x, std::size_t y, Direction dir);
++    bool CanMove(std::size_t x, std::size_t y, Direction dir,
++                 ObjectType type);
+ 
+     //! Processes the move of the player.
+     //! \param x The x position.
+@@ -90,4 +91,4 @@ class Game
+ };
+ }  // namespace baba_is_auto
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/Sources/baba-is-auto/Games/Game.cpp b/Sources/baba-is-auto/Games/Game.cpp
+index d97fe5a..c3c5cc8 100644
+--- a/Sources/baba-is-auto/Games/Game.cpp
++++ b/Sources/baba-is-auto/Games/Game.cpp
+@@ -6,8 +6,41 @@
+ 
+ #include <baba-is-auto/Games/Game.hpp>
+ 
++#include <algorithm>
++
+ namespace baba_is_auto
+ {
++namespace
++{
++bool HasNonEmptyObject(const std::vector<ObjectType>& types)
++{
++    return std::any_of(types.begin(), types.end(), [](ObjectType type) {
++        return type != ObjectType::ICON_EMPTY;
++    });
++}
++
++std::vector<ObjectType> GetPushableTypes(const std::vector<ObjectType>& types,
++                                         RuleManager& ruleManager)
++{
++    std::vector<ObjectType> pushableTypes;
++
++    for (auto type : types)
++    {
++        if (type == ObjectType::ICON_EMPTY)
++        {
++            continue;
++        }
++
++        if (IsTextType(type) || ruleManager.HasProperty({ type }, ObjectType::PUSH))
++        {
++            pushableTypes.emplace_back(type);
++        }
++    }
++
++    return pushableTypes;
++}
++}  // namespace
++
+ Game::Game(std::string_view filename)
+ {
+     m_map.Load(filename);
+@@ -57,7 +90,7 @@ void Game::MovePlayer(Direction dir)
+ 
+     for (auto& [x, y] : positions)
+     {
+-        if (CanMove(x, y, dir))
++        if (CanMove(x, y, dir, m_playerIcon))
+         {
+             ProcessMove(x, y, dir, m_playerIcon);
+         }
+@@ -139,7 +172,8 @@ void Game::ParseRule(std::size_t x, std::size_t y, RuleDirection direction)
+     }
+ }
+ 
+-bool Game::CanMove(std::size_t x, std::size_t y, Direction dir)
++bool Game::CanMove(std::size_t x, std::size_t y, Direction dir,
++                   ObjectType type)
+ {
+     int _x = static_cast<int>(x);
+     int _y = static_cast<int>(y);
+@@ -175,19 +209,32 @@ bool Game::CanMove(std::size_t x, std::size_t y, Direction dir)
+     }
+ 
+     const std::vector<ObjectType> types = m_map.At(_x, _y).GetTypes();
++    const bool movingOpen =
++        m_ruleManager.HasProperty({ type }, ObjectType::OPEN);
++    const bool movingShut =
++        m_ruleManager.HasProperty({ type }, ObjectType::SHUT);
++    const bool targetOpen =
++        m_ruleManager.HasProperty(types, ObjectType::OPEN);
++    const bool targetShut =
++        m_ruleManager.HasProperty(types, ObjectType::SHUT);
++    const bool opensTarget =
++        (movingOpen && targetShut) || (movingShut && targetOpen);
+ 
+     // Check the icon has property 'STOP'.
+-    if (m_ruleManager.HasProperty(types, ObjectType::STOP))
++    if (m_ruleManager.HasProperty(types, ObjectType::STOP) && !opensTarget)
+     {
+         return false;
+     }
+ 
+-    if (m_ruleManager.HasProperty(types, ObjectType::PUSH) ||
+-        m_map.At(_x, _y).HasTextType())
++    const auto pushableTypes = GetPushableTypes(types, m_ruleManager);
++    if (!pushableTypes.empty())
+     {
+-        if (!CanMove(_x, _y, dir))
++        for (auto pushableType : pushableTypes)
+         {
+-            return false;
++            if (!CanMove(_x, _y, dir, pushableType))
++            {
++                return false;
++            }
+         }
+     }
+ 
+@@ -222,19 +269,55 @@ void Game::ProcessMove(std::size_t x, std::size_t y, Direction dir,
+     _y += dy;
+ 
+     const std::vector<ObjectType> types = m_map.At(_x, _y).GetTypes();
+-
+-    if (m_ruleManager.HasProperty(types, ObjectType::PUSH))
++    const bool movingOpen =
++        m_ruleManager.HasProperty({ type }, ObjectType::OPEN);
++    const bool movingShut =
++        m_ruleManager.HasProperty({ type }, ObjectType::SHUT);
++    const bool movingSink =
++        m_ruleManager.HasProperty({ type }, ObjectType::SINK);
++    const bool targetOpen =
++        m_ruleManager.HasProperty(types, ObjectType::OPEN);
++    const bool targetShut =
++        m_ruleManager.HasProperty(types, ObjectType::SHUT);
++    const bool targetSink =
++        m_ruleManager.HasProperty(types, ObjectType::SINK);
++
++    const auto pushableTypes = GetPushableTypes(types, m_ruleManager);
++    if (!pushableTypes.empty())
+     {
+-        auto rules = m_ruleManager.GetRules(ObjectType::PUSH);
+-
+-        for (auto& rule : rules)
++        for (auto pushableType : pushableTypes)
++        {
++            ProcessMove(_x, _y, dir, pushableType);
++        }
++    }
++    else if ((movingOpen && targetShut) || (movingShut && targetOpen))
++    {
++        const ObjectType removeProperty =
++            movingOpen ? ObjectType::SHUT : ObjectType::OPEN;
++        for (auto targetType : types)
++        {
++            if (targetType != ObjectType::ICON_EMPTY &&
++                m_ruleManager.HasProperty({ targetType }, removeProperty))
++            {
++                m_map.RemoveObject(_x, _y, targetType);
++            }
++        }
++        m_map.RemoveObject(x, y, type);
++        return;
++    }
++    else if (targetSink || (movingSink && HasNonEmptyObject(types)))
++    {
++        for (auto targetType : types)
+         {
+-            const ObjectType nounType = std::get<0>(rule.objects).GetTypes()[0];
+-            ProcessMove(_x, _y, dir, ConvertTextToIcon(nounType));
++            if (targetType != ObjectType::ICON_EMPTY)
++            {
++                m_map.RemoveObject(_x, _y, targetType);
++            }
+         }
++        m_map.RemoveObject(x, y, type);
++        return;
+     }
+-    else if (m_ruleManager.HasProperty(types, ObjectType::SINK) ||
+-             m_ruleManager.HasProperty(types, ObjectType::DEFEAT))
++    else if (m_ruleManager.HasProperty(types, ObjectType::DEFEAT))
+     {
+         m_map.RemoveObject(x, y, type);
+         return;
+@@ -279,4 +362,4 @@ void Game::CheckPlayState()
+         }
+     }
+ }
+-}  // namespace baba_is_auto
+\ No newline at end of file
++}  // namespace baba_is_auto

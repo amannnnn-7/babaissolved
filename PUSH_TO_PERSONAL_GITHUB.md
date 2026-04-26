@@ -48,7 +48,7 @@ git commit -m "pivot: wrap C++ pyBaba engine; drop YAML levels for baba-is-auto 
 - loader scans both custom and vendored maps (vendor_* prefix)
 - pybind11 binding patches saved at scripts/patches/
 - new docs: ARCHITECTURE.md, ROADMAP.md, HANDOVER.md
-- all 19 tests still passing"
+- all 29 tests still passing"
 ```
 
 ---

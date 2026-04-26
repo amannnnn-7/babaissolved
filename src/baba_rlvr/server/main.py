@@ -124,6 +124,7 @@ def play_frame(sid: str) -> Response:
         cell=56,
         title=env.level_id,
         step_idx=env.world.step_count,
+        backend="sprites",
     )
     buf = io.BytesIO()
     img.save(buf, format="PNG")

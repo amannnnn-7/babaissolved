@@ -136,11 +136,11 @@ We were not able to fully train across all generated levels within the available
 
 ### Plots
 
-![Mean rollout reward during training](assets/blog/W%26B%20Chart%204_26_2026,%204_01_29%20PM.png)
+![Mean rollout reward during training](https://raw.githubusercontent.com/amannnnn-7/babaissolved/main/assets/blog/W%26B%20Chart%204_26_2026,%204_01_29%20PM.png)
 
 *Mean rollout reward over training, showing how the policy improves as it learns to manipulate rules rather than treating the levels as static navigation problems.*
 
-![Total rollout wins during training](assets/blog/W%26B%20Chart%204_26_2026,%204_01_46%20PM.png)
+![Total rollout wins during training](https://raw.githubusercontent.com/amannnnn-7/babaissolved/main/assets/blog/W%26B%20Chart%204_26_2026,%204_01_46%20PM.png)
 
 *Total rollout wins during training, giving a more concrete view of when the model begins converting improved reasoning into actual solved episodes.*
 

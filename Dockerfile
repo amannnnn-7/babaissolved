@@ -16,6 +16,7 @@ COPY . /app
 
 RUN bash scripts/setup_vendor.sh
 RUN pip install --upgrade pip setuptools wheel
+RUN pip install --no-deps --no-build-isolation ./vendor/baba-is-auto
 RUN pip install .
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
